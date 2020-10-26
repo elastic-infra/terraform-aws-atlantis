@@ -147,7 +147,7 @@ resource "aws_ssm_parameter" "atlantis_bitbucket_user_token" {
 ###################
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "v2.5.0"
+  version = "v2.47.0"
 
   create_vpc = var.vpc_id == ""
 
@@ -169,35 +169,44 @@ module "vpc" {
 ###################
 module "alb" {
   source  = "terraform-aws-modules/alb/aws"
-  version = "v4.0.0"
+  version = "v5.7.0"
 
-  load_balancer_name = var.name
+  name = var.name
 
   vpc_id          = local.vpc_id
   subnets         = local.public_subnet_ids
   security_groups = flatten([module.alb_https_sg.this_security_group_id, module.alb_http_sg.this_security_group_id, var.security_group_ids])
 
-  logging_enabled     = var.alb_logging_enabled
-  log_bucket_name     = var.alb_log_bucket_name
-  log_location_prefix = var.alb_log_location_prefix
+  access_logs = {
+    enabled = var.alb_logging_enabled
+    bucket  = var.alb_log_bucket_name
+    prefix  = var.alb_log_location_prefix
+  }
 
   https_listeners = [
     {
-      port            = 443
-      certificate_arn = var.certificate_arn == "" ? module.acm.this_acm_certificate_arn : var.certificate_arn
+      target_group_index   = 0
+      port                 = 443
+      protocol             = "HTTPS"
+      certificate_arn      = var.certificate_arn == "" ? module.acm.this_acm_certificate_arn : var.certificate_arn
+      action_type          = local.alb_authenication_method
+      authenticate_oidc    = var.alb_authenticate_oidc
+      authenticate_cognito = var.alb_authenticate_cognito
     },
   ]
-
-  https_listeners_count = 1
 
   http_tcp_listeners = [
     {
-      port     = 80
-      protocol = "HTTP"
+      port        = 80
+      protocol    = "HTTP"
+      action_type = "redirect"
+      redirect = {
+        port        = 443
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
     },
   ]
-
-  http_tcp_listeners_count = 1
 
   target_groups = [
     {
@@ -208,8 +217,6 @@ module "alb" {
       deregistration_delay = 10
     },
   ]
-
-  target_groups_count = 1
 
   tags = local.tags
 }
@@ -239,7 +246,7 @@ resource "aws_lb_listener_rule" "redirect_http_to_https" {
 ###################
 module "alb_https_sg" {
   source  = "terraform-aws-modules/security-group/aws//modules/https-443"
-  version = "v3.0.1"
+  version = "v3.15.0"
 
   name        = "${var.name}-alb-https"
   vpc_id      = local.vpc_id
@@ -252,7 +259,7 @@ module "alb_https_sg" {
 
 module "alb_http_sg" {
   source  = "terraform-aws-modules/security-group/aws//modules/http-80"
-  version = "v3.0.1"
+  version = "v3.15.0"
 
   name        = "${var.name}-alb-http"
   vpc_id      = local.vpc_id
@@ -265,7 +272,7 @@ module "alb_http_sg" {
 
 module "atlantis_sg" {
   source  = "terraform-aws-modules/security-group/aws"
-  version = "v3.0.1"
+  version = "v3.15.0"
 
   name        = var.name
   vpc_id      = local.vpc_id
@@ -293,7 +300,7 @@ module "atlantis_sg" {
 ###################
 module "acm" {
   source  = "terraform-aws-modules/acm/aws"
-  version = "v2.4.0"
+  version = "v2.10.0"
 
   create_certificate = var.certificate_arn == ""
 
@@ -326,7 +333,7 @@ resource "aws_route53_record" "atlantis" {
 ###################
 module "ecs" {
   source  = "terraform-aws-modules/ecs/aws"
-  version = "v2.0.0"
+  version = "v2.3.0"
 
   name = var.name
 }
@@ -410,7 +417,7 @@ resource "aws_iam_role_policy" "ecs_task_access_secrets" {
 
 module "container_definition_github_gitlab" {
   source  = "cloudposse/ecs-container-definition/aws"
-  version = "v0.21.0"
+  version = "v0.40.0"
 
   container_name  = var.name
   container_image = local.atlantis_image
@@ -451,7 +458,7 @@ module "container_definition_github_gitlab" {
 
 module "container_definition_bitbucket" {
   source  = "cloudposse/ecs-container-definition/aws"
-  version = "v0.21.0"
+  version = "v0.40.0"
 
   container_name  = var.name
   container_image = local.atlantis_image
